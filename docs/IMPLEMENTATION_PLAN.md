@@ -204,10 +204,17 @@ For each candidate model in order:
 - **Retryable failures** — HTTP 429, 5xx, timeouts, dropped connections — are retried on the same
   model up to `attempts_per_model` times, with exponential backoff and random jitter. A `Retry-After`
   header is respected when it is short; when it is long, the router moves on instead of waiting.
-- **Provider-specific failures** — 401 and 403, a bad key for *that* provider — skip straight to
-  the next model.
-- **Client errors** — 400, 404, 422 — are returned immediately. A malformed request fails on every
+- **Provider-specific failures** — 401, 402, 403 and 404 — skip straight to the next model. A bad
+  key or an unknown model name is a problem with *that* provider or with the router's config, not
+  with the caller's request. (404 was first listed as a client error. It moved here while building:
+  the caller asked for a policy, so a provider that does not know the model points at the config.)
+- **Client errors** — 400, 413, 422 — are returned immediately. A malformed request fails on every
   provider, so trying the next one only wastes time and money.
+- **A candidate over a cap** is skipped rather than ending the request, so a cheaper model further
+  down the list can still answer. Only when every candidate is over a cap does the caller get a 429.
+- **A call that may have been billed** — a timeout, or a connection lost after the request was sent
+  — counts its whole reservation as spent instead of giving it back, because the provider may have
+  done the work. A refused connection gives it back: nothing reached the provider.
 
 If every candidate fails, the caller gets one clean `502` listing each attempt and why it failed,
 never a stack trace.
