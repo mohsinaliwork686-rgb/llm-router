@@ -225,10 +225,13 @@ the spending cap end to end, with no API keys, and it is what the README demo ru
 
 ## 9. Build order
 
+Monday's and Tuesday's work is done on Wednesday, on top of Wednesday's own, so Thursday and
+Friday keep their usual jobs.
+
 | Day | Work |
 |-----|------|
-| **Wed** | This plan and the README pitch, committed first. Then packaging, config loading and validation, the policy engine, pricing, token estimation, the budget guard with in-memory spend. Tests for each as it lands |
-| **Thu** | The provider interface and all three adapters, the fallback loop, the FastAPI app, client keys and per-client caps, the Redis spend store, metrics. CI with a real Redis service |
+| **Wed** | *Monday:* this plan and the README pitch, committed first. *Tuesday:* packaging, config loading and validation. *Wednesday:* the core: the policy engine, pricing, token estimation, the budget guard with in-memory spend, the provider interface and all three adapters, the fallback loop, and the FastAPI app with client keys and per-client caps. Tests for each as it lands |
+| **Thu** | The Redis spend store, metrics, CI with a real Redis service, and fixing whatever CI finds |
 | **Fri** | Dockerfile and Compose, a no-keys demo on the simulated provider, the README with real output, publish, update the portfolio and roadmap |
 
 ## 10. Test plan
