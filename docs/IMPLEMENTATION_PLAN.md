@@ -254,7 +254,7 @@ the spending cap end to end, with no API keys, and it is what the README demo ru
 | A reservation estimate runs low | The estimator errs high on purpose, and settlement uses real counts |
 | Translating between the OpenAI and Anthropic shapes loses information | Map the fields both sides share, reject the rest clearly, test the round trip |
 | Prices go stale | Prices live in the operator's config, never in code |
-| Fitting five days into three overruns | Scope is not cut to fit. The core logic comes first so the cap is never at risk, and if Friday runs over, the remaining work continues on Monday rather than being dropped |
+| Fitting five days into three overruns | Scope is not cut and nothing carries into next week. Monday's and Tuesday's work is done on Wednesday on top of Wednesday's own, so Thursday and Friday keep their original plan and the project still ships on Friday |
 
 ## 12. Definition of done
 
