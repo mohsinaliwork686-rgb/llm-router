@@ -38,13 +38,19 @@ settles the real cost afterwards. If the worst case would cross a cap, the reque
 without ever reaching the provider. Money is counted in integer micro-dollars, so a day of tiny
 requests cannot drift.
 
+The output side of the worst case is exact, because the router sends the provider the same
+`max_tokens` it reserved for. The input side uses a token estimate built to run high (about three
+characters per token, where English averages four). The real cost is settled from the provider's
+own counts, and if an estimate ever runs low the overrun is recorded and reported rather than
+hidden.
+
 ## Status
 
-| Day | |
-|-----|-|
-| Wed | Plan, README, core logic: config, routing policy, pricing, the spending cap |
-| Thu | Providers, fallback, the HTTP service, per-client caps, Redis, metrics, CI |
-| Fri | Docker, a no-keys demo, publish |
+| Day | Work | |
+|-----|------|-|
+| Wed | Plan, README, core logic: config, routing policy, pricing, the spending cap | done |
+| Thu | Providers, fallback, the HTTP service, per-client caps, Redis, metrics, CI | |
+| Fri | Docker, a no-keys demo, publish | |
 
 ## Non-goals
 
