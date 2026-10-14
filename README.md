@@ -48,8 +48,8 @@ hidden.
 
 | Day | Work | |
 |-----|------|-|
-| Wed | Plan, README, core logic: config, routing policy, pricing, the spending cap | done |
-| Thu | Providers, fallback, the HTTP service, per-client caps, Redis, metrics, CI | |
+| Wed | Plan, README, config, routing policy, pricing, the spending cap, the three providers, fallback, the HTTP service with client keys | done |
+| Thu | Redis, metrics, CI | |
 | Fri | Docker, a no-keys demo, publish | |
 
 ## Non-goals
