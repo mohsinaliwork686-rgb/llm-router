@@ -52,3 +52,9 @@ def example_config(example_data: dict[str, Any]) -> RouterConfig:
 @pytest.fixture
 def minimal_data() -> dict[str, Any]:
     return copy.deepcopy(minimal_config_data())
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    # anyio ships with httpx and starlette; its pytest plugin runs the async tests on asyncio.
+    return "asyncio"
