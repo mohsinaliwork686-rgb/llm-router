@@ -38,7 +38,11 @@ class _Strict(BaseModel):
 class ProviderConfig(_Strict):
     type: Literal["openai_compatible", "anthropic", "simulated"]
     base_url: str | None = None
+    #: The environment variable holding this provider's key. For type anthropic it may be left
+    #: out, and the SDK then finds credentials itself (ANTHROPIC_API_KEY, or an `ant` profile).
     api_key_env: str | None = None
+    #: Only for type openai_compatible. Newer OpenAI models want max_completion_tokens.
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
     # Only for type "simulated": how to behave on purpose.
     fail_with: int | None = Field(default=None, ge=400, le=599)
     fail_times: int = Field(default=0, ge=0)
@@ -53,6 +57,9 @@ class ModelConfig(_Strict):
     input_per_million: Decimal = Field(ge=0)
     output_per_million: Decimal = Field(ge=0)
     max_output_tokens: int = Field(gt=0)
+    #: Leave out temperature and top_p when calling this model. Newer Claude models refuse them,
+    #: and most OpenAI-style clients send them by habit.
+    drop_sampling_params: bool = False
 
 
 class RuleCondition(_Strict):
@@ -124,6 +131,10 @@ class RouterConfig(_Strict):
         for name, provider in self.providers.items():
             if provider.type == "openai_compatible" and not provider.base_url:
                 problems.append(f"providers.{name}: type openai_compatible needs a base_url")
+            if provider.type != "openai_compatible" and provider.max_tokens_field != "max_tokens":
+                problems.append(
+                    f"providers.{name}: max_tokens_field only applies to type openai_compatible"
+                )
             if provider.type != "simulated" and (provider.fail_with or provider.fail_times):
                 problems.append(
                     f"providers.{name}: fail_with and fail_times only apply to type simulated"
