@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-router"
+version = "0.1.0"
+description = "One endpoint, many models: policy routing, fallback, and a hard daily spending cap."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Mohsin Ali" }]
+keywords = ["llm", "router", "proxy", "fallback", "budget", "fastapi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "httpx>=0.27",
+  "pyyaml>=6",
+  "prometheus-client>=0.20",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+redis = ["redis>=5"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+llm-router = "llm_router.main:run"
+
+[project.urls]
+Homepage = "https://github.com/mohsinaliwork686-rgb/llm-router"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_router"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
