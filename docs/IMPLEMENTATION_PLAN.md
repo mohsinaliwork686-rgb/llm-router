@@ -120,8 +120,9 @@ retry:
 
 The config is validated completely on startup. A policy naming a model that does not exist, a
 model naming a provider that does not exist, a rule pointing at a missing policy, a negative
-price — each fails startup with a message naming the line, rather than failing the first request
-that happens to touch it.
+price — each fails startup with a message giving the path to the wrong entry, such as
+`policies.cheap[1]: unknown model 'hiaku'`, rather than failing the first request that happens to
+touch it. Every problem is listed at once, so fixing a config is one pass, not one error at a time.
 
 ## 5. Architecture
 
