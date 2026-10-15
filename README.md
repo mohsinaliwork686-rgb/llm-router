@@ -49,7 +49,7 @@ hidden.
 | Day | Work | |
 |-----|------|-|
 | Wed | Plan, README, config, routing policy, pricing, the spending cap, the three providers, fallback, the HTTP service with client keys | done |
-| Thu | Redis, metrics, CI | |
+| Thu | Redis spend store shared between routers, Prometheus metrics, CI on Python 3.11 to 3.14 with a real Redis | done |
 | Fri | Docker, a no-keys demo, publish | |
 
 ## Non-goals
