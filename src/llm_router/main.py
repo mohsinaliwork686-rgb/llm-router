@@ -23,7 +23,7 @@ from llm_router.core.policy import RoutingError, routable_names
 from llm_router.core.pricing import format_usd
 from llm_router.core.providers import Provider, build_providers
 from llm_router.core.router import AllFailed, OverBudget, RequestRejected, Router, RoutingFailed
-from llm_router.core.spend import MemorySpendStore, SpendStore
+from llm_router.core.spend import MemorySpendStore, SpendStore, SpendStoreError
 from llm_router.schemas import ChatCompletionRequest, ErrorType, completion_body, error_body
 
 log = logging.getLogger("llm_router")
@@ -63,6 +63,25 @@ def client_keys(config: RouterConfig, env: Mapping[str, str]) -> dict[str, str]:
     return keys
 
 
+def build_store(config: RouterConfig, env: Mapping[str, str]) -> SpendStore:
+    settings = config.store
+    if settings.type == "memory":
+        return MemorySpendStore()
+    url = env.get(settings.url_env, "")
+    if not url:
+        raise ConfigError([f"store: environment variable {settings.url_env} is not set"])
+    try:
+        from llm_router.core.redis_store import RedisSpendStore
+    except ImportError:
+        raise ConfigError(
+            [
+                "store: type redis needs the Redis client; "
+                "install it with: pip install 'llm-router[redis]'"
+            ]
+        ) from None
+    return RedisSpendStore.from_url(url, settings.key_prefix, settings.max_connections)
+
+
 def create_app(
     config: RouterConfig,
     *,
@@ -75,7 +94,7 @@ def create_app(
     env = os.environ if env is None else env
     keys = client_keys(config, env)
     providers = dict(providers) if providers is not None else build_providers(config, env)
-    store = store or MemorySpendStore()
+    store = store if store is not None else build_store(config, env)
     guard = BudgetGuard(config.budget, config.clients, store, clock=clock)
     router = Router(config, providers, guard, **(router_options or {}))
 
@@ -133,6 +152,13 @@ def create_app(
             ) from None
         except RoutingFailed as error:
             raise _routing_failure(error) from None
+        except SpendStoreError:
+            log.exception("spend store unavailable")
+            raise ApiError(
+                503,
+                "the spend store is unavailable, so the router cannot check its caps",
+                "service_unavailable",
+            ) from None
 
         headers = {
             "x-router-model": routed.model.name,
@@ -167,7 +193,10 @@ def create_app(
     @app.get("/budget")
     async def budget(request: Request) -> dict[str, Any]:
         client = authenticate(request)
-        status = await guard.status()
+        try:
+            status = await guard.status()
+        except SpendStoreError:
+            raise ApiError(503, "the spend store is unavailable", "service_unavailable") from None
         if client is not None:
             # A client sees the shared cap and its own, never another client's spending.
             status["clients"] = {client: status["clients"][client]}

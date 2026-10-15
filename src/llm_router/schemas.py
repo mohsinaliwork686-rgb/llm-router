@@ -132,7 +132,11 @@ def completion_body(routed: RoutedCompletion) -> dict[str, Any]:
 
 
 ErrorType = Literal[
-    "invalid_request_error", "authentication_error", "budget_exceeded", "upstream_error"
+    "invalid_request_error",
+    "authentication_error",
+    "budget_exceeded",
+    "upstream_error",
+    "service_unavailable",
 ]
 
 

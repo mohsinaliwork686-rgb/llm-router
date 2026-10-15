@@ -10,6 +10,9 @@ For every attempt:
 Then, by failure kind: RETRY tries the same model again after a backoff, up to
 attempts_per_model times; SKIP moves to the next model; REJECT stops, because the request itself is
 the problem and every other model would refuse it too.
+
+If the spend store cannot be reached when reserving, SpendStoreError propagates and no provider is
+called: with no way to check the caps, the router refuses rather than spend blind.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from llm_router.core.config import ModelConfig, RouterConfig
 from llm_router.core.policy import Route, route
 from llm_router.core.pricing import cost_micros, output_limit, worst_case_micros
 from llm_router.core.providers.base import Failure, Provider, ProviderError
+from llm_router.core.spend import SpendStoreError
 from llm_router.core.tokens import estimate_messages
 
 log = logging.getLogger(__name__)
@@ -145,7 +149,7 @@ class Router:
 
                 if isinstance(result, Completion):
                     cost = cost_micros(model, result.usage.input_tokens, result.usage.output_tokens)
-                    shortfall = await self._guard.settle(reservation, cost)
+                    shortfall = await self._settle(reservation, cost)
                     if shortfall:
                         log.warning(
                             "%s cost %d micro-dollars more than its reservation",
@@ -166,9 +170,9 @@ class Router:
                 error = result
                 charged = worst_case if error.may_have_billed else 0
                 if error.may_have_billed:
-                    await self._guard.settle(reservation, worst_case)
+                    await self._settle(reservation, worst_case)
                 else:
-                    await self._guard.release(reservation)
+                    await self._release(reservation)
                 attempts.append(
                     Attempt(
                         model.name,
@@ -218,13 +222,28 @@ class Router:
         except asyncio.CancelledError:
             # The caller went away mid-call. The provider may still finish and bill, so count the
             # reservation as spent before letting the cancellation through.
-            await asyncio.shield(self._guard.settle(reservation, reservation.amount))
+            await asyncio.shield(self._settle(reservation, reservation.amount))
             raise
         except Exception as error:  # a bug in an adapter must not take down the request
             log.exception("unexpected error from %s", model.name)
             return ProviderError(
                 Failure.SKIP, f"unexpected error: {type(error).__name__}", may_have_billed=True
             )
+
+    async def _settle(self, reservation: Reservation, actual: int) -> int:
+        # A store that fails here leaves the reservation held until its bucket expires. That
+        # errs safe, since the cap only gets tighter, so the answer still goes back to the caller.
+        try:
+            return await self._guard.settle(reservation, actual)
+        except SpendStoreError:
+            log.exception("could not record spend; the reservation stays held")
+            return 0
+
+    async def _release(self, reservation: Reservation) -> None:
+        try:
+            await self._guard.release(reservation)
+        except SpendStoreError:
+            log.exception("could not release a reservation; it stays held")
 
     def _backoff(self, attempt_number: int, retry_after: float | None) -> float | None:
         """Exponential backoff with jitter: somewhere between half and all of base * 2^(n-1)."""

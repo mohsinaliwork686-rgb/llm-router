@@ -4,7 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from llm_router.core.config import ConfigError, parse_config
-from llm_router.main import create_app
+from llm_router.core.spend import MemorySpendStore, SpendStoreError
+from llm_router.main import build_store, create_app
 
 KEYS = {"KEY_BILLING": "billing-secret", "KEY_SUPPORT": "support-secret"}
 
@@ -318,3 +319,58 @@ async def test_the_official_openai_sdk_works_unchanged():
             model="fast", messages=[{"role": "user", "content": "x"}]
         )
     await http_client.aclose()
+
+
+class DownStore(MemorySpendStore):
+    async def reserve(self, buckets, amount):
+        raise SpendStoreError("connection refused")
+
+    async def totals(self, keys):
+        raise SpendStoreError("connection refused")
+
+
+def test_an_unreachable_spend_store_is_a_503_and_no_provider_is_called():
+    app = create_app(parse_config(config_data()), env=KEYS, store=DownStore())
+    with TestClient(app) as client:
+        response = chat(client)
+        budget = client.get("/budget")
+    assert response.status_code == 503
+    assert response.json()["error"]["type"] == "service_unavailable"
+    assert budget.status_code == 503
+
+
+def test_the_store_is_built_from_config():
+    assert isinstance(build_store(parse_config(config_data()), env={}), MemorySpendStore)
+    redis_config = parse_config(config_data(store={"type": "redis"}))
+    with pytest.raises(ConfigError, match="REDIS_URL is not set"):
+        build_store(redis_config, env={})
+    store = build_store(redis_config, env={"REDIS_URL": "redis://localhost:6379/0"})
+    assert type(store).__name__ == "RedisSpendStore"
+
+
+@pytest.mark.anyio
+async def test_two_routers_sharing_redis_enforce_one_cap(redis_store_factory):
+    if redis_store_factory is None:
+        pytest.skip("set REDIS_URL to run the Redis tests")
+    # Each call reserves a worst case of 510 micro-dollars and settles at 44. Under a $0.0007 cap
+    # that admits exactly five calls in total. Two routers with separate stores would admit ten.
+    data = config_data(budget={"daily_usd": "0.0007"})
+    apps = [create_app(parse_config(data), env=KEYS, store=redis_store_factory()) for _ in range(2)]
+    clients = [
+        httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://router")
+        for app in apps
+    ]
+    payload = {"model": "fast", "messages": [{"role": "user", "content": "Hi there"}]}
+
+    statuses = []
+    for i in range(20):
+        response = await clients[i % 2].post("/v1/chat/completions", json=payload)
+        statuses.append(response.status_code)
+
+    assert statuses.count(200) == 5
+    assert statuses.count(429) == 15
+    # Both routers report the same total: it is one cap, not two.
+    for client in clients:
+        assert (await client.get("/budget")).json()["global"]["spent_usd"] == "0.000220"
+    for client in clients:
+        await client.aclose()

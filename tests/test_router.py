@@ -9,7 +9,7 @@ from llm_router.core.config import parse_config
 from llm_router.core.pricing import worst_case_micros
 from llm_router.core.providers import Failure, ProviderError
 from llm_router.core.router import AllFailed, OverBudget, RequestRejected, Router
-from llm_router.core.spend import MemorySpendStore
+from llm_router.core.spend import MemorySpendStore, SpendStoreError
 from llm_router.core.tokens import estimate_messages
 
 pytestmark = pytest.mark.anyio
@@ -339,3 +339,44 @@ async def test_auto_routes_by_rules():
     result = await router.complete("auto", REQUEST, tags={"batch"})
     assert result.route.policy == "cheap"
     assert large.calls == []
+
+
+class BrokenStore(MemorySpendStore):
+    """A store that fails on chosen operations, as an unreachable Redis would."""
+
+    def __init__(self, *failing):
+        super().__init__()
+        self.failing = set(failing)
+
+    async def reserve(self, buckets, amount):
+        if "reserve" in self.failing:
+            raise SpendStoreError("redis is down")
+        return await super().reserve(buckets, amount)
+
+    async def settle(self, keys, held, actual):
+        if "settle" in self.failing:
+            raise SpendStoreError("redis is down")
+        return await super().settle(keys, held, actual)
+
+
+def router_with_store(store, large, small):
+    router, _, _, config = make_router(large, small)
+    guard = BudgetGuard(config.budget, config.clients, store, clock=router._guard._clock)
+    return Router(config, {"p_large": large, "p_small": small}, guard)
+
+
+async def test_a_store_that_cannot_reserve_stops_the_call_before_any_provider():
+    large, small = Scripted(done()), Scripted(done())
+    router = router_with_store(BrokenStore("reserve"), large, small)
+    with pytest.raises(SpendStoreError):
+        await router.complete("default", REQUEST)
+    assert large.calls == [] and small.calls == []
+
+
+async def test_a_store_that_cannot_settle_still_returns_the_answer_and_keeps_the_hold():
+    store = BrokenStore("settle")
+    router = router_with_store(store, Scripted(done()), Scripted())
+    result = await router.complete("default", REQUEST)
+    assert result.completion.text == "ok"
+    totals = await store.totals(["2026-10-14/global"])
+    assert totals["2026-10-14/global"].held > 0  # still held: the cap errs tight, never loose
