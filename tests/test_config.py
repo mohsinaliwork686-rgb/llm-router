@@ -159,3 +159,18 @@ def test_invalid_yaml(tmp_path):
     path.write_text("providers: [unclosed\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="is not valid YAML"):
         load_config(path)
+
+
+def test_the_default_timezone_is_checked_too(monkeypatch, minimal_data):
+    # A machine with no timezone database cannot resolve even "UTC". That must surface as a
+    # config problem, not as a crash once the router starts.
+    import zoneinfo
+
+    from llm_router.core import config as config_module
+
+    def no_database(key):
+        raise zoneinfo.ZoneInfoNotFoundError(key)
+
+    monkeypatch.setattr(config_module, "ZoneInfo", no_database)
+    minimal_data["budget"] = {"daily_usd": 5}
+    assert problems_for(minimal_data) == ["budget.timezone: unknown timezone 'UTC'"]

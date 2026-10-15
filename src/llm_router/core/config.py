@@ -88,7 +88,9 @@ class BudgetConfig(_Strict):
     #: "reject" refuses over-budget requests. "warn" lets them through and flags them, which is
     #: useful for a week of watching what a new cap would have blocked before turning it on.
     on_exceeded: Literal["reject", "warn"] = "reject"
-    timezone: str = "UTC"
+    # validate_default: the default is checked too, since a machine with no timezone database
+    # cannot resolve even "UTC".
+    timezone: str = Field(default="UTC", validate_default=True)
 
     @field_validator("timezone")
     @classmethod

@@ -19,6 +19,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
   "fastapi>=0.115",
@@ -27,6 +28,8 @@ dependencies = [
   "httpx2>=2.0",
   "pyyaml>=6",
   "prometheus-client>=0.20",
+  # zoneinfo needs a timezone database; Windows and slim containers have none of their own.
+  "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
