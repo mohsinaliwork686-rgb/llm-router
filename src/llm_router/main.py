@@ -8,17 +8,20 @@ import json
 import logging
 import os
 import sys
+import time
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 from pydantic import ValidationError
 
 from llm_router import __version__
 from llm_router.core.budget import BudgetGuard, Clock, utc_now
 from llm_router.core.config import ConfigError, RouterConfig, load_config
+from llm_router.core.metrics import Metrics
 from llm_router.core.policy import RoutingError, routable_names
 from llm_router.core.pricing import format_usd
 from llm_router.core.providers import Provider, build_providers
@@ -29,6 +32,16 @@ from llm_router.schemas import ChatCompletionRequest, ErrorType, completion_body
 log = logging.getLogger("llm_router")
 
 
+#: The metrics label for each error status a chat request can end with.
+RESULTS = {
+    400: "invalid",
+    401: "unauthorized",
+    429: "over_budget",
+    502: "failed",
+    503: "unavailable",
+}
+
+
 class ApiError(Exception):
     def __init__(
         self,
@@ -37,10 +50,12 @@ class ApiError(Exception):
         error_type: ErrorType,
         code: str | None = None,
         headers: Mapping[str, str] | None = None,
+        result: str | None = None,
         **extra: Any,
     ) -> None:
         super().__init__(message)
         self.status = status
+        self.result = result or RESULTS.get(status, "error")
         self.body = error_body(message, error_type, code, **extra)
         self.headers = dict(headers or {})
 
@@ -90,6 +105,7 @@ def create_app(
     store: SpendStore | None = None,
     clock: Clock = utc_now,
     router_options: Mapping[str, Any] | None = None,
+    metrics: Metrics | None = None,
 ) -> FastAPI:
     env = os.environ if env is None else env
     keys = client_keys(config, env)
@@ -97,6 +113,7 @@ def create_app(
     store = store if store is not None else build_store(config, env)
     guard = BudgetGuard(config.budget, config.clients, store, clock=clock)
     router = Router(config, providers, guard, **(router_options or {}))
+    metrics = metrics or Metrics()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -128,6 +145,16 @@ def create_app(
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> JSONResponse:
+        started = time.perf_counter()
+        try:
+            response = await _chat(request)
+        except ApiError as error:
+            metrics.request_done(error.result, time.perf_counter() - started)
+            raise
+        metrics.request_done("ok", time.perf_counter() - started)
+        return response
+
+    async def _chat(request: Request) -> JSONResponse:
         client = authenticate(request)
         try:
             payload = json.loads(await request.body())
@@ -151,6 +178,7 @@ def create_app(
                 400, str(error), "invalid_request_error", code="model_not_found"
             ) from None
         except RoutingFailed as error:
+            metrics.attempts_made(error.attempts, client)
             raise _routing_failure(error) from None
         except SpendStoreError:
             log.exception("spend store unavailable")
@@ -160,6 +188,8 @@ def create_app(
                 "service_unavailable",
             ) from None
 
+        metrics.attempts_made(routed.attempts, client)
+        metrics.answered(routed)
         headers = {
             "x-router-model": routed.model.name,
             "x-router-attempts": str(_calls(routed.attempts)),
@@ -202,12 +232,21 @@ def create_app(
             status["clients"] = {client: status["clients"][client]}
         return status
 
+    @app.get("/metrics")
+    async def prometheus_metrics() -> Response:
+        try:
+            metrics.budget_status(await guard.status())
+        except SpendStoreError:
+            log.warning("spend store unavailable; serving metrics without the spend gauges")
+        return Response(metrics.render(), media_type=CONTENT_TYPE_LATEST)
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
     app.state.router = router
     app.state.guard = guard
+    app.state.metrics = metrics
     return app
 
 
@@ -222,7 +261,12 @@ def _routing_failure(error: RoutingFailed) -> ApiError:
     headers = {"x-router-attempts": str(_calls(error.attempts)), "x-should-retry": "false"}
     if isinstance(error, RequestRejected):
         return ApiError(
-            400, str(error), "invalid_request_error", headers=headers, attempts=attempts
+            400,
+            str(error),
+            "invalid_request_error",
+            headers=headers,
+            result="rejected",
+            attempts=attempts,
         )
     if isinstance(error, OverBudget):
         return ApiError(
