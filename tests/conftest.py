@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -58,3 +60,37 @@ def minimal_data() -> dict[str, Any]:
 def anyio_backend() -> str:
     # anyio ships with httpx and starlette; its pytest plugin runs the async tests on asyncio.
     return "asyncio"
+
+
+def redis_url() -> str | None:
+    """The Redis to test against. CI sets REQUIRE_REDIS so a missing Redis fails, not skips."""
+    url = os.environ.get("REDIS_URL")
+    if not url and os.environ.get("REQUIRE_REDIS"):
+        pytest.fail("REQUIRE_REDIS is set but REDIS_URL is not")
+    return url
+
+
+@pytest.fixture
+async def redis_store_factory():
+    """Makes Redis stores that share one key prefix, as several routers would, and deletes every
+    key they wrote afterwards. None when there is no Redis to test against."""
+    url = redis_url()
+    if not url:
+        yield None
+        return
+    from llm_router.core.redis_store import RedisSpendStore
+
+    prefix = f"llm-router-test:{uuid.uuid4().hex}:"
+    stores = []
+
+    def make():
+        store = RedisSpendStore.from_url(url, key_prefix=prefix)
+        stores.append(store)
+        return store
+
+    yield make
+    cleanup = make()
+    async for key in cleanup._client.scan_iter(match=f"{prefix}*"):
+        await cleanup._client.delete(key)
+    for store in stores:
+        await store.close()

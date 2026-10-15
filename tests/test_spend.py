@@ -1,4 +1,4 @@
-"""Contract tests every spend store must pass. Thursday adds Redis to the `store` fixture."""
+"""Contract tests every spend store must pass: in memory, and Redis when REDIS_URL is set."""
 
 import asyncio
 import threading
@@ -10,8 +10,13 @@ from llm_router.core.spend import Bucket, MemorySpendStore, Refusal, Totals
 pytestmark = pytest.mark.anyio
 
 
-@pytest.fixture(params=["memory"])
-async def store(request):
+@pytest.fixture(params=["memory", "redis"])
+async def store(request, redis_store_factory):
+    if request.param == "redis":
+        if redis_store_factory is None:
+            pytest.skip("set REDIS_URL to run the Redis tests")
+        yield redis_store_factory()
+        return
     store = MemorySpendStore()
     yield store
     await store.close()

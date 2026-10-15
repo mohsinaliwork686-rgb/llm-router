@@ -23,6 +23,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class SpendStoreError(Exception):
+    """The store could not be reached or did not answer. With no way to check the caps, the router
+    refuses new calls rather than spend blind."""
+
+
 @dataclass(frozen=True)
 class Bucket:
     key: str

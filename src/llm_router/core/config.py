@@ -114,6 +114,17 @@ class RetryConfig(_Strict):
     max_retry_after_seconds: float = Field(default=5, ge=0)
 
 
+class StoreConfig(_Strict):
+    #: "memory" keeps spend inside one router process. "redis" shares it, so several routers
+    #: behind a load balancer enforce one cap between them.
+    type: Literal["memory", "redis"] = "memory"
+    #: The environment variable holding the Redis URL. A URL can carry a password, so it is
+    #: never written in the config file itself.
+    url_env: str = "REDIS_URL"
+    key_prefix: str = "llm-router:"
+    max_connections: int = Field(default=50, gt=0)
+
+
 class RouterConfig(_Strict):
     providers: dict[str, ProviderConfig]
     models: dict[str, ModelConfig]
@@ -123,6 +134,7 @@ class RouterConfig(_Strict):
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     clients: list[ClientConfig] = Field(default_factory=list)
     retry: RetryConfig = Field(default_factory=RetryConfig)
+    store: StoreConfig = Field(default_factory=StoreConfig)
 
     @model_validator(mode="after")
     def _references(self) -> RouterConfig:
