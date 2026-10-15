@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[anthropic,dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - name: The example config must load
+        env:
+          ROUTER_KEY_BILLING: example-billing-key
+          ROUTER_KEY_SUPPORT: example-support-key
+        run: llm-router --check --config examples/router.yaml
+
+  test:
+    # Linux only: service containers, which give these jobs a real Redis, run only on Linux.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      # Without this, a missing Redis would quietly skip the Redis tests instead of failing.
+      REQUIRE_REDIS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[anthropic,redis,dev]"
+      - run: pytest
+
+  test-other-os:
+    # No Redis service here, so the Redis tests skip; the Linux jobs cover them.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[anthropic,redis,dev]"
+      - run: pytest
