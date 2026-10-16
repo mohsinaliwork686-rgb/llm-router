@@ -1,0 +1,58 @@
+# The demo config: no API keys and no network. Simulated providers stand in for real ones,
+# with made-up prices, so fallback and the spending cap can be watched end to end.
+
+providers:
+  outage:
+    type: simulated
+    fail_with: 503             # fails every call, like a provider that is down
+  revoked:
+    type: simulated
+    fail_with: 401             # fails every call, like a provider whose key was revoked
+  steady:
+    type: simulated
+    latency_ms: 300
+    reply: "Hello! This answer came from a simulated model."
+
+models:
+  frontier:
+    provider: outage
+    model: sim-frontier
+    input_per_million: 15
+    output_per_million: 75
+    max_output_tokens: 4000
+  backup:
+    provider: revoked
+    model: sim-backup
+    input_per_million: 3
+    output_per_million: 15
+    max_output_tokens: 4000
+  premium:
+    provider: steady
+    model: sim-premium
+    input_per_million: 15
+    output_per_million: 75
+    max_output_tokens: 4000
+  budget:
+    provider: steady
+    model: sim-budget
+    input_per_million: 0.5
+    output_per_million: 1.5
+    max_output_tokens: 4000
+
+policies:
+  resilient: [frontier, backup, budget]
+  best: [premium, budget]
+
+default_policy: resilient
+
+budget:
+  daily_usd: 1.00
+  on_exceeded: reject
+
+store:
+  type: redis                  # REDIS_URL comes from the environment
+
+retry:
+  attempts_per_model: 2
+  backoff_ms: 100
+  timeout_seconds: 10

@@ -1,0 +1,38 @@
+# The no-keys demo: `docker compose up`.
+# Redis holds the spend, the router runs on simulated providers, and the demo walks through it.
+
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  router:
+    build: .
+    image: llm-router:local
+    environment:
+      LLM_ROUTER_CONFIG: /app/examples/demo.yaml
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${ROUTER_PORT:-8080}:8080"   # ROUTER_PORT=8090 docker compose up, if 8080 is taken
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  demo:
+    build: .
+    image: llm-router:local
+    entrypoint: ["python", "/app/examples/demo.py"]
+    environment:
+      ROUTER_URL: http://router:8080
+    depends_on:
+      router:
+        condition: service_healthy
