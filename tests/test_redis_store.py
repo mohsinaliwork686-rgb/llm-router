@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from llm_router.core.redis_store import BUCKET_TTL_SECONDS, RedisSpendStore
-from llm_router.core.spend import Bucket, SpendStoreError, Totals
+from llm_router.core.spend import Bucket, Refusal, SpendStoreError, Totals
 
 pytestmark = pytest.mark.anyio
 
@@ -31,6 +31,31 @@ async def test_several_routers_cannot_jointly_exceed_a_shared_cap(make_store):
     assert accepted == limit // amount
     totals = await routers[0].totals(["2026-10-15/global"])
     assert totals["2026-10-15/global"] == Totals(0, accepted * amount)
+
+
+class RacyStore(RedisSpendStore):
+    """Check, then hold, in two separate round trips: the race the Lua script exists to prevent."""
+
+    async def reserve(self, buckets, amount):
+        for bucket in buckets:
+            totals = (await self.totals([bucket.key]))[bucket.key]
+            if bucket.limit is not None and totals.committed + totals.held + amount > bucket.limit:
+                return Refusal(bucket.key, bucket.limit, totals.committed, totals.held)
+        for bucket in buckets:
+            await self._client.hincrby(self._key(bucket.key), "held", amount)
+        return None
+
+
+async def test_the_shared_cap_test_would_catch_a_racy_store(make_store):
+    # Proof that the test above means something: the same burst through a non-atomic store
+    # admits far more than the cap allows.
+    template = make_store()
+    racy = RacyStore(template._client, template._prefix)
+    limit, amount = 1_000, 7
+    results = await asyncio.gather(
+        *(racy.reserve([Bucket("racy/global", limit)], amount) for _ in range(600))
+    )
+    assert sum(result is None for result in results) > limit // amount
 
 
 async def test_one_routers_spend_is_visible_to_another(make_store):
