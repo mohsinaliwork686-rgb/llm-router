@@ -72,3 +72,10 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[anthropic,redis,dev]"
       - run: pytest
+
+  demo:
+    # The README's no-keys demo, run for real. It exits non-zero if the router misbehaves.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose up --build --abort-on-container-exit --exit-code-from demo
