@@ -292,6 +292,9 @@ with replicas) is expected; Redis Cluster is not supported.
 - **No tools, images or multiple choices.** Requests that use them are refused with a clear 400
   instead of being forwarded with those parts silently dropped.
 - **No billing or accounts.** Per-client caps, yes; invoicing, no.
+- **No caching.** Every request reaches a provider. For a cache in front of model calls, and a
+  benchmark of when it gives wrong answers, see
+  [semcache](https://github.com/mohsinaliwork686-rgb/semcache).
 
 ## Development
 
