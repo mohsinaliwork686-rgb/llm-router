@@ -43,7 +43,8 @@ $ docker compose up
 That starts Redis, the router on simulated providers, and a short demo that drives it. If port
 8080 is taken on your machine, run `ROUTER_PORT=8090 docker compose up`. To see only the demo's
 output, start the router first with `docker compose up -d router`, then run
-`docker compose run --rm demo`. This is its real output:
+`docker compose run --rm demo`. Stop it with `docker compose down`, which also clears the
+demo's spending, so the next run prints the same figures. This is its real output:
 
 ```text
 1. Fallback: ask the "resilient" policy for an answer
@@ -107,10 +108,13 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8080/v1", api_key="your-router-key")
 
 reply = client.chat.completions.create(
-    model="cheap",  # a policy, a single model, or "auto"
+    model="resilient",  # a policy, a single model, or "auto"
     messages=[{"role": "user", "content": "Summarise this support ticket."}],
 )
 ```
+
+`resilient` is a policy in the demo's config. With your own config, use one of your policies
+instead, such as `cheap` in [examples/router.yaml](examples/router.yaml).
 
 For `model="auto"`, tag the request so the rules can match it:
 `extra_headers={"X-Router-Tags": "urgent"}`.
